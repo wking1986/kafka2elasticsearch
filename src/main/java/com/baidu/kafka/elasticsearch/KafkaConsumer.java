@@ -48,6 +48,7 @@ public class KafkaConsumer {
   }
 
   public ConsumerConfig createConsumerConfig(String zookeeper, String groupId) {
+    //config zookeeper 
     props.put("zookeeper.connect", zookeeper);
     props.put("group.id", groupId);
     props.put("zookeeper.session.timeout.ms", ConfigFile.ZK_SESSION_TIMEOUT_MS);
@@ -62,11 +63,13 @@ public class KafkaConsumer {
 
   public void run(int numThreads) {
     LOG.info( "Run!" );
+    //subscription kafka topic
     Map<String, Integer> topicCountMap = new HashMap<String, Integer>();
     topicCountMap.put(topic, new Integer(numThreads));
     Map<String, List<KafkaStream<byte[], byte[]>>> consumerMap = consumer.createMessageStreams(topicCountMap);
     List<KafkaStream<byte[], byte[]>> streams = consumerMap.get(topic);
     //stream = consumerMap.get(topic).get(0);
+    //multithreading elasticsearch index
     executor = Executors.newFixedThreadPool(new Integer(numThreads));
     int threadNumber = 0;
     for(KafkaStream<?, ?> stream : streams) {
@@ -77,6 +80,7 @@ public class KafkaConsumer {
 
   public static void main(String[] args) {
     try {
+	//read json config
 	String jsonPath = args[0];
         JSONParser parser = new JSONParser();
 	Object obj = parser.parse(new FileReader(jsonPath));
@@ -89,20 +93,11 @@ public class KafkaConsumer {
 	int threads = Integer.parseInt((String)jsonObject.get("threadNum"));
         int bulksize = Integer.parseInt((String)jsonObject.get("bulkMaxSize"));
 	String esCluster = (String)jsonObject.get("esCluster");
-	/*
-        //String zkHost = ConfigFile.ZK_HOSTS + ":" + ConfigFile.ZK_PORT;
-        String zkHost = args[0];
-        String zkHostPort = zkHost + ":" + ConfigFile.ZK_PORT;
-	String esHost = args[1];
-	String topic = args[2];
-	//String groupId = ConfigFile.KAFKA_GROUPID;
-	String groupId = args[3];
-	int threads = ConfigFile.THREAD_NUM;
-	//String topic = ConfigFile.KAFKA_TOPIC;
-	*/
         LOG.info( "Start!" );
         LOG.info( "topic is: "+topic );
+	//create kafka consumer
 	KafkaConsumer kComsumer = new KafkaConsumer(zkHostPort, groupId, topic, esHost, bulksize, esCluster);
+	//run elasticsearch index
 	kComsumer.run(threads);
 	LOG.info( "End!" );
     } catch (Exception e) {

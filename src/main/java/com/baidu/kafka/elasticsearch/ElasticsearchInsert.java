@@ -65,6 +65,7 @@ public class ElasticsearchInsert implements Runnable {
     this.bulkSize = bulkSize;
     elasticSearchCluster = esCluster;
     elasticSearchHost = esHost;
+    //initialization elasticsearch with TransportClient
     Settings settings = ImmutableSettings.settingsBuilder().put("cluster.name", elasticSearchCluster).build();
     client = new TransportClient(settings).addTransportAddress(new InetSocketTransportAddress(elasticSearchHost, elasticSearchPort));
     NodesInfoResponse response = client.admin().cluster().nodesInfo(new NodesInfoRequest().timeout("60")).actionGet();
@@ -75,7 +76,7 @@ public class ElasticsearchInsert implements Runnable {
       }
     }
   }
-  
+  //batch index and insert elastcisearch
   public boolean insertES(ArrayList<JSONObject> jsonAry) {
     String document = null;
     try {
@@ -113,8 +114,8 @@ public class ElasticsearchInsert implements Runnable {
          try {
            while(msgStream.hasNext()) {
                //System.out.println("kafka msg-----");
+	       //get kafka message
                kafkaMsg = new String(msgStream.next().message(), "UTF-8");
-               //System.out.println(kafkaMsg);
                JSONObject json = new JSONObject(kafkaMsg);
                jsonList.add(json);
                /*
@@ -125,7 +126,7 @@ public class ElasticsearchInsert implements Runnable {
                */
 	       int listSize = jsonList.size();
                long endTime = System.currentTimeMillis()/1000;
-               countPv++;
+               countPv++;        //record index number
                if(((endTime-startTime) == ConfigFile.INDEX_INTERVAL) || listSize >= bulkSize) break;
            }
            if(insertES(jsonList)) {
