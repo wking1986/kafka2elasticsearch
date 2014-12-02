@@ -36,6 +36,8 @@ import org.elasticsearch.action.admin.cluster.node.info.NodesInfoResponse;
 import static org.elasticsearch.node.NodeBuilder.*;
 
 import org.json.JSONObject;
+import org.json.JSONArray;
+
 import com.baidu.kafka.elasticsearch.ConfigFile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -65,23 +67,24 @@ public class ElasticsearchInsert implements Runnable {
     this.bulkSize = bulkSize;
     elasticSearchCluster = esCluster;
     elasticSearchHost = esHost;
-    //initialization elasticsearch with TransportClient
     Settings settings = ImmutableSettings.settingsBuilder().put("cluster.name", elasticSearchCluster).build();
     client = new TransportClient(settings).addTransportAddress(new InetSocketTransportAddress(elasticSearchHost, elasticSearchPort));
     NodesInfoResponse response = client.admin().cluster().nodesInfo(new NodesInfoRequest().timeout("60")).actionGet();
     nodesMap = response.getNodesMap();
     for(String k: nodesMap.keySet()){
-    if(!elasticSearchHost.equals(nodesMap.get(k).getHostname())) {
+      if(!elasticSearchHost.equals(nodesMap.get(k).getHostname())) {
        client.addTransportAddress(new InetSocketTransportAddress(nodesMap.get(k).getHostname(), elasticSearchPort));
       }
     }
+    LOG.info("init es");
   }
-  //batch index and insert elastcisearch
+  
   public boolean insertES(ArrayList<JSONObject> jsonAry) {
     String document = null;
     try {
 	 BulkRequestBuilder bulkRequest = client.prepareBulk();
          for(JSONObject json: jsonAry) {
+	     /*log filter to json
              productName = json.getString("product");
              serviceName = json.getString("service");
              long insertTime = System.currentTimeMillis();
@@ -93,6 +96,12 @@ public class ElasticsearchInsert implements Runnable {
              String dateTimeYMD[] = dateTime.split(" ");
              indexName = "aqueducts_" + productName + "_" + dateTimeYMD[0];
              typeName = serviceName;
+	     */
+	     SimpleDateFormat sf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+	     String dateTime = sf.format(System.currentTimeMillis());
+	     String dateTimeYMD[] = dateTime.split(" ");
+	     indexName = "clog_" + dateTimeYMD[0];
+	     typeName = "jpaas";
              document = json.toString();
              bulkRequest.add(this.client.prepareIndex(indexName, typeName).setSource(document));
 	 }
@@ -114,24 +123,35 @@ public class ElasticsearchInsert implements Runnable {
          try {
            while(msgStream.hasNext()) {
                //System.out.println("kafka msg-----");
-	       //get kafka message
                kafkaMsg = new String(msgStream.next().message(), "UTF-8");
+               //System.out.println(kafkaMsg);
                JSONObject json = new JSONObject(kafkaMsg);
-               jsonList.add(json);
-               /*
-               for(String k : nodesMap.keySet()){
-                  LOG.info(k + ":" + nodesMap.get(k).getHostname());
-               }
-               jsonList.add(json.toString());
-               */
+	       //json type:{message:[log1,log2],tags:[tag1,tag2]}
+	       JSONArray messageAry = json.getJSONArray("message");
+	       for(int i=0; i < messageAry.length(); i++) {
+		   String messageStr = messageAry.getString(i);
+		   JSONObject jsonb = new JSONObject();
+		   jsonb.put("message", messageStr);
+		   //logstash need version and timestamp
+		   jsonb.put("@version", "1");
+		   SimpleDateFormat sf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ");
+		   jsonb.put("@timestamp", sf.format(System.currentTimeMillis()));
+
+	           jsonList.add(jsonb);   
+	       }
+	       //log filter to json
+               //jsonList.add(json);
 	       int listSize = jsonList.size();
                long endTime = System.currentTimeMillis()/1000;
-               countPv++;        //record index number
-               if(((endTime-startTime) == ConfigFile.INDEX_INTERVAL) || listSize >= bulkSize) break;
+               countPv++;
+               if(((endTime-startTime) >= ConfigFile.INDEX_INTERVAL) || listSize >= bulkSize) break;
            }
            if(insertES(jsonList)) {
               LOG.info("pv: " + countPv);
               countPv = 0;
+              for(String k : nodesMap.keySet()){
+                  LOG.info(k + ":" + nodesMap.get(k).getHostname());
+              }
 	      jsonList.clear();
 	   }
          } catch (Exception e) {
